@@ -1,4 +1,51 @@
-# Documentación del Proyecto de Simulaciones
+# Documentación del Proyecto
+
+Este directorio contiene la documentación completa del proyecto de simulaciones CompuCell3D.
+
+## Estructura de la Documentación
+
+- [Guía de Usuario](user_guide.md) - Instrucciones detalladas para usar el proyecto
+- [Guía de Desarrollo](development_guide.md) - Guía para desarrolladores
+- [Configuración](configuration.md) - Documentación de configuración
+- [Simulaciones](simulations.md) - Detalles de las simulaciones implementadas
+- [Contribución](CONTRIBUTING.md) - Guía para contribuir al proyecto
+
+## Contenido
+
+### Guía de Usuario
+Instrucciones paso a paso para:
+- Instalación del proyecto
+- Configuración del entorno
+- Ejecución de simulaciones
+- Análisis de resultados
+
+### Guía de Desarrollo
+Información para desarrolladores:
+- Estructura del código
+- Convenciones de codificación
+- Proceso de desarrollo
+- Pruebas y validación
+
+### Configuración
+Detalles de configuración:
+- Parámetros de simulación
+- Configuración del entorno
+- Opciones de ejecución
+
+### Simulaciones
+Documentación específica de cada simulación:
+- steady_state_simulation
+  - Descripción
+  - Parámetros
+  - Resultados esperados
+  - Análisis de datos
+
+### Contribución
+Guía para contribuir al proyecto:
+- Proceso de contribución
+- Estándares de código
+- Revisión de código
+- Documentación
 
 ## Descripción General
 

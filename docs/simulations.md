@@ -1,5 +1,7 @@
 # Documentación de Simulaciones
 
+Este documento describe las simulaciones implementadas en el proyecto.
+
 ## Estructura de Directorios
 
 ### old_simulations/
@@ -94,4 +96,64 @@ Los scripts personalizados permiten:
 Para reportar problemas o solicitar ayuda:
 - Crear un issue en GitHub
 - Contactar al administrador del repositorio
-- Consultar la documentación en línea 
+- Consultar la documentación en línea
+
+## Simulación Steady State
+
+### Descripción
+La simulación Steady State modela el crecimiento y comportamiento de esferoides celulares bajo condiciones de estado estacionario. Esta simulación es fundamental para entender la dinámica celular en condiciones controladas.
+
+### Estructura de Archivos
+```
+projects_simulations/steady_state/
+├── Simulation/
+│   ├── steady_state_simulation.py      # Script principal de simulación
+│   ├── steady_state_simulation.xml     # Configuración XML
+│   └── steady_state_simulationSteppables.py  # Comportamientos personalizados
+└── steady_state_simulation.cc3d        # Archivo de proyecto CompuCell3D
+```
+
+### Parámetros de Simulación
+
+#### Configuración General
+- Tamaño del dominio: 100x100x100
+- Condiciones de frontera: Periódicas
+- Paso de tiempo: 1 MCS
+
+#### Parámetros Celulares
+- Energía de contacto entre células
+- Tasa de crecimiento
+- Umbrales metabólicos
+- Propiedades de secreción
+
+#### Campos de Difusión
+- Oxígeno (O2)
+- Glucosa (GLC)
+- Ácido láctico (LAC)
+
+### Ejecución
+1. Abrir el archivo `steady_state_simulation.cc3d` en CompuCell3D
+2. Configurar los parámetros deseados en el archivo XML
+3. Ejecutar la simulación
+4. Los resultados se guardan en el directorio `screenshot_data/`
+
+### Análisis de Resultados
+Los resultados incluyen:
+- Evolución temporal del esferoide
+- Distribución de campos de difusión
+- Estadísticas celulares
+- Métricas de crecimiento
+
+### Visualización
+Los resultados pueden visualizarse usando:
+- Visor 3D de CompuCell3D
+- Scripts de Python para análisis
+- Herramientas de visualización personalizadas
+
+## Otras Simulaciones
+
+### Simulaciones Antiguas
+Las simulaciones antiguas se encuentran en el directorio `old_simulations/` y sirven como referencia histórica. Estas incluyen:
+- Variaciones en parámetros
+- Diferentes condiciones iniciales
+- Experimentos de validación 

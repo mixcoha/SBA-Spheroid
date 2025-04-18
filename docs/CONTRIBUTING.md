@@ -1,21 +1,74 @@
 # Guía de Contribución
 
-¡Gracias por tu interés en contribuir a este proyecto! Esta guía te ayudará a entender cómo puedes participar.
+Este documento describe el proceso para contribuir al proyecto.
 
 ## Cómo Contribuir
 
-1. **Fork** el repositorio
-2. Crea una rama para tu característica (`git checkout -b feature/nueva-caracteristica`)
-3. Haz commit de tus cambios (`git commit -am 'Añade nueva característica'`)
-4. Push a la rama (`git push origin feature/nueva-caracteristica`)
-5. Abre un Pull Request
+### Reportar Issues
+1. Verificar si el issue ya existe
+2. Crear un nuevo issue
+3. Proporcionar información detallada
+4. Seguir la plantilla de issue
 
-## Estándares de Código
+### Proponer Cambios
+1. Crear una rama nueva
+2. Hacer cambios
+3. Crear pull request
+4. Esperar revisión
 
-- Usa Python 3.8 o superior
-- Sigue las convenciones de estilo PEP 8
-- Documenta tu código usando docstrings
-- Escribe pruebas unitarias para nuevas funcionalidades
+## Proceso de Desarrollo
+
+### Crear una Rama
+```bash
+git checkout -b feature/nombre-de-la-caracteristica
+```
+
+### Hacer Commits
+- Mensajes descriptivos
+- Cambios atómicos
+- Seguir convenciones
+- Incluir pruebas
+
+### Crear Pull Request
+1. Actualizar la rama
+2. Resolver conflictos
+3. Solicitar revisión
+4. Esperar aprobación
+
+## Estándares
+
+### Código
+- Seguir PEP 8
+- Documentar cambios
+- Incluir pruebas
+- Mantener compatibilidad
+
+### Documentación
+- Actualizar docs
+- Incluir ejemplos
+- Mantener consistencia
+- Revisar ortografía
+
+## Revisión de Código
+
+### Proceso
+1. Revisar cambios
+2. Probar funcionalidad
+3. Verificar documentación
+4. Aprobar o solicitar cambios
+
+### Criterios
+- Calidad de código
+- Funcionalidad
+- Documentación
+- Pruebas
+
+## Contacto
+
+Para preguntas o sugerencias:
+- Crear un issue
+- Contactar al mantenedor
+- Unirse al chat del proyecto
 
 ## Estructura del Proyecto
 

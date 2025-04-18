@@ -1,5 +1,96 @@
 # Configuración del Proyecto
 
+Este documento describe la configuración del proyecto y sus componentes.
+
+## Requisitos del Sistema
+
+### Software Requerido
+- Python 3.8 o superior
+- CompuCell3D 4.0 o superior
+- Git
+
+### Dependencias de Python
+Las dependencias están listadas en `requirements.txt`:
+```bash
+numpy>=1.21.0
+matplotlib>=3.4.0
+python-docx>=0.8.11
+scipy>=1.7.0
+pandas>=1.3.0
+```
+
+## Configuración del Entorno
+
+### Instalación de Dependencias
+```bash
+# Crear entorno virtual
+python -m venv venv
+source venv/bin/activate  # En Windows: venv\Scripts\activate
+
+# Instalar dependencias
+pip install -r requirements.txt
+```
+
+### Configuración de CompuCell3D
+1. Instalar CompuCell3D
+2. Configurar las variables de entorno:
+   ```bash
+   export CC3D_HOME=/ruta/a/compucell3d
+   export PATH=$PATH:$CC3D_HOME
+   ```
+
+## Configuración de Simulaciones
+
+### Parámetros de Simulación
+Los parámetros de simulación se configuran en los archivos XML:
+```xml
+<Steppable Type="DiffusionSolverFE">
+    <Field Name="O2">
+        <DiffusionData>
+            <DiffusionConstant>1000</DiffusionConstant>
+            <DecayConstant>0.1</DecayConstant>
+        </DiffusionData>
+    </Field>
+</Steppable>
+```
+
+### Configuración de Campos
+- Campos de difusión
+- Condiciones de frontera
+- Tasas de secreción
+- Umbrales metabólicos
+
+## Configuración de Desarrollo
+
+### Estructura del Proyecto
+```
+.
+├── docs/                  # Documentación
+├── projects_simulations/  # Simulaciones actuales
+├── old_simulations/      # Simulaciones antiguas
+├── scripts/             # Scripts de utilidad
+└── requirements.txt     # Dependencias
+```
+
+### Convenciones de Código
+- PEP 8 para Python
+- Documentación en formato Markdown
+- Comentarios en inglés
+
+## Configuración de Git
+
+### .gitignore
+El archivo `.gitignore` excluye:
+- Archivos temporales
+- Resultados de simulación
+- Archivos de configuración local
+
+### Flujo de Trabajo
+1. Crear rama para nuevas características
+2. Hacer commits descriptivos
+3. Revisar cambios antes de merge
+4. Mantener la rama main estable
+
 ## Parámetros de Simulación
 
 ### Parámetros Generales

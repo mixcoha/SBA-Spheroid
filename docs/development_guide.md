@@ -1,18 +1,96 @@
 # Guía de Desarrollo
 
-## Estructura del Proyecto
+Este documento proporciona guías y estándares para el desarrollo del proyecto.
 
+## Estructura del Código
+
+### Organización de Archivos
 ```
-project_simulations/
-├── src/                    # Código fuente
-│   ├── core/              # Funcionalidad central
-│   ├── simulation/        # Simulaciones específicas
-│   └── utils/             # Utilidades
-├── config/                # Archivos de configuración
-├── docs/                  # Documentación
-├── tests/                 # Pruebas unitarias
-└── results/              # Resultados de simulaciones
+.
+├── scripts/              # Scripts de utilidad
+│   ├── utils/           # Utilidades generales
+│   └── analysis/        # Scripts de análisis
+├── projects_simulations/ # Simulaciones actuales
+│   └── steady_state/    # Simulación steady state
+└── docs/                # Documentación
 ```
+
+### Convenciones de Código
+
+#### Python
+- Seguir PEP 8
+- Usar type hints
+- Documentar funciones y clases
+- Escribir pruebas unitarias
+
+#### XML (CompuCell3D)
+- Indentar correctamente
+- Agrupar elementos relacionados
+- Comentar secciones complejas
+- Validar antes de commit
+
+## Proceso de Desarrollo
+
+### Flujo de Trabajo
+1. Crear rama desde main
+2. Desarrollar características
+3. Hacer commits frecuentes
+4. Crear pull request
+5. Revisar y merge
+
+### Control de Versiones
+- Usar mensajes de commit descriptivos
+- Mantener el historial limpio
+- Usar tags para versiones
+- Documentar cambios importantes
+
+## Pruebas
+
+### Tipos de Pruebas
+- Unitarias
+- Integración
+- Validación de simulaciones
+- Rendimiento
+
+### Ejecución de Pruebas
+```bash
+# Ejecutar todas las pruebas
+python -m pytest
+
+# Ejecutar pruebas específicas
+python -m pytest tests/test_simulation.py
+```
+
+## Documentación
+
+### Estándares
+- Usar Markdown
+- Incluir ejemplos
+- Mantener actualizada
+- Revisar ortografía
+
+### Generación
+```bash
+# Generar documentación
+python scripts/generate_docs.py
+
+# Verificar enlaces
+python scripts/check_links.py
+```
+
+## Mantenimiento
+
+### Limpieza de Código
+- Eliminar código muerto
+- Refactorizar cuando sea necesario
+- Mantener dependencias actualizadas
+- Revisar warnings
+
+### Monitoreo
+- Seguir métricas de código
+- Revisar issues
+- Actualizar documentación
+- Mantener changelog
 
 ## Estándares de Código
 
