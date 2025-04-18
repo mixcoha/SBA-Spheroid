@@ -1,0 +1,88 @@
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Archivos de CompuCell3D
+*.vtk
+*.dat
+*.log
+*.piff
+*.dml
+*.cc3d
+*.cc3dproj
+*.cc3dproj.user
+_settings.sqlite
+screenshot_data/
+screenshots.json
+
+# Directorios temporales
+temp/
+tmp/
+results/temp/
+
+# Archivos de configuración local
+*.local
+*.config
+
+# Archivos de entorno virtual
+venv/
+env/
+ENV/
+
+# Archivos de IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Archivos de Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Archivos de datos grandes
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.pack
+*.idx
+
+# Resultados de simulaciones
+results/**/*.vtk
+results/**/*.dat
+results/**/*.csv
+results/**/*.mp4
+results/**/*.zip
+
+# Datos de simulación
+**/Simulation/_settings.sqlite
+**/screenshot_data/
+**/*.vtk
+**/*.dat
+**/*.csv
+**/*.mp4
+**/*.zip
+**/*.sqlite
+**/*.json
