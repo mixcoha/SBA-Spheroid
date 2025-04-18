@@ -1,0 +1,298 @@
+<CompuCell3D Revision="2" Version="4.6.0">
+   
+   <Metadata>
+      
+      <!-- Basic properties simulation -->
+      <NumberOfProcessors>8</NumberOfProcessors>
+      <DebugOutputFrequency>10</DebugOutputFrequency>
+      <!-- <NonParallelModule Name="Potts"/> -->
+   </Metadata>
+   
+    <Potts>
+      
+      <!-- Basic properties of CPM (GGH) algorithm -->
+      <Dimensions x="1000" y="1000" z="2"/>
+      <Steps>5000</Steps>
+      <Temperature>20.0</Temperature>
+      <NeighborOrder>2</NeighborOrder>
+   </Potts>
+   
+    <Plugin Name="CellType">
+        <CellType TypeId="0" TypeName="Medium"/>
+        <CellType TypeId="1" TypeName="PROL"/>
+        <CellType TypeId="2" TypeName="RESE"/>
+        <CellType TypeId="3" TypeName="INVA"/>
+        <CellType TypeId="4" TypeName="NECR"/>
+    </Plugin>
+
+    <Plugin Name="Volume">
+        <VolumeEnergyParameters CellType="PROL" LambdaVolume="2.0" TargetVolume="50.0"/>
+        <VolumeEnergyParameters CellType="RESE" LambdaVolume="2.0" TargetVolume="50.0"/>
+        <VolumeEnergyParameters CellType="INVA" LambdaVolume="2.0" TargetVolume="50.0"/>
+        <VolumeEnergyParameters CellType="NECR" LambdaVolume="50" TargetVolume="20.0"/>
+    </Plugin>
+   
+   <Plugin Name="CenterOfMass">
+      
+      <!-- Module tracking center of mass of each cell -->
+   </Plugin>
+   
+   <Plugin Name="NeighborTracker">
+      
+      <!-- Module tracking neighboring cells of each cell -->
+   </Plugin>
+   
+    <Plugin Name="Contact">
+        <Energy Type1="Medium" Type2="Medium">10.0</Energy>
+        <Energy Type1="Medium" Type2="PROL">10.0</Energy>
+        <Energy Type1="Medium" Type2="RESE">10.0</Energy>
+        <Energy Type1="Medium" Type2="INVA">20.0</Energy>
+        <Energy Type1="Medium" Type2="NECR">20.0</Energy>
+        <Energy Type1="PROL" Type2="PROL">10.0</Energy>
+        <Energy Type1="PROL" Type2="RESE">12.0</Energy>
+        <Energy Type1="PROL" Type2="INVA">20.0</Energy>
+        <Energy Type1="PROL" Type2="NECR">20.0</Energy>
+        <Energy Type1="RESE" Type2="RESE">8.0</Energy>
+        <Energy Type1="RESE" Type2="INVA">20.0</Energy>
+        <Energy Type1="RESE" Type2="NECR">40.0</Energy>
+        <Energy Type1="INVA" Type2="INVA">40.0</Energy>
+        <Energy Type1="INVA" Type2="NECR">40.0</Energy>
+        <Energy Type1="NECR" Type2="NECR">10.0</Energy>
+        <NeighborOrder>1</NeighborOrder>
+    </Plugin>
+   
+   <Plugin Name="Chemotaxis">
+      
+      <!-- You may repeat ChemicalField element for each chemical field declared in the PDE solvers -->
+      <!-- Specification of chemotaxis properties of select cell types. -->
+      <ChemicalField Name="o2">
+         <ChemotaxisByType ChemotactTowards="Medium" Lambda="100.0" Type="INVA"/>
+         <ChemotaxisByType ChemotactTowards="Medium" Lambda="50.0" Type="RESE"/>
+         <ChemotaxisByType ChemotactTowards="Medium" Lambda="10.0" Type="PROL"/>
+      </ChemicalField>
+      <ChemicalField Name="glc">
+         <ChemotaxisByType ChemotactTowards="Medium" Lambda="5.0" Type="PROL"/>
+         <ChemotaxisByType ChemotactTowards="Medium" Lambda="30.0" Type="RESE"/>
+         <ChemotaxisByType ChemotactTowards="Medium" Lambda="40.0" Type="PROL"/>
+      </ChemicalField>
+   </Plugin>
+   
+   <Plugin Name="Secretion">
+      
+      <!-- Specification of secretion properties of select cell types. -->
+      <!-- You may repeat Field element for each chemical field declared in the PDE solvers -->
+      <!-- Specification of secretion properties of individual cells can be done in Python -->
+      <Field Name="o2">
+         <ConstantConcentration Type="Medium">180.0</ConstantConcentration>
+         <!-- <Secretion Type="Medium">10</Secretion> -->
+      </Field>
+      <Field Name="glc">
+         <ConstantConcentration Type="Medium">11</ConstantConcentration>
+         <!-- <Secretion Type="Medium">5</Secretion> -->
+      </Field>
+      <Field Name="lac">
+         <Secretion Type="PROL">2.0</Secretion>
+      </Field>
+      <Field Name="h3o">
+         <Secretion Type="PROL">2.0</Secretion>
+      </Field>
+      <Field Name="akg">
+         <Secretion Type="PROL">0.01</Secretion>
+      </Field>
+      <Field Name="fum">
+         <Secretion Type="RESE">0.01</Secretion>
+      </Field>
+      <Field Name="hco3">
+         <Secretion Type="RESE">0.5</Secretion>
+         <Secretion Type="INVA">0.5</Secretion>
+      </Field>
+   </Plugin>
+
+   <Steppable Type="KernelDiffusionSolver">
+      
+      <!-- Specification of PDE solvers -->
+      <DiffusionField Name="o2">
+         <Kernel>20</Kernel>
+         <DiffusionData>
+            <FieldName>o2</FieldName>
+            <DiffusionConstant>500</DiffusionConstant>
+            <DecayConstant>1e=3</DecayConstant>
+                <Uptake Type="PROL" MaxUptake="10" RelativeUptakeRate="0.99"/>
+                <Uptake Type="RESE" MaxUptake="2" RelativeUptakeRate="0.99"/>
+                <Uptake Type="INVA" MaxUptake="2" RelativeUptakeRate="0.99"/>
+                <DoNotDecayIn>NECR</DoNotDecayIn>
+            <DeltaX>2.0</DeltaX>
+            <DeltaT>2.0</DeltaT>
+         </DiffusionData>
+      </DiffusionField>
+      
+      <DiffusionField Name="glc">
+         <Kernel>5</Kernel>
+         <DiffusionData>
+            <FieldName>glc</FieldName>
+            <DiffusionConstant>200</DiffusionConstant>
+            <DecayConstant>1e-03</DecayConstant>
+                <Uptake Type="PROL" MaxUptake="5" RelativeUptakeRate="0.99"/>
+                <Uptake Type="RESE" MaxUptake="1" RelativeUptakeRate="0.99"/>
+                <Uptake Type="INVA" MaxUptake="1" RelativeUptakeRate="0.99"/>
+                <DoNotDiffuseTo>NECR</DoNotDiffuseTo>
+            <DoNotDiffuseTo>NECR</DoNotDiffuseTo>
+            <DeltaX>2.0</DeltaX>
+            <DeltaT>2.0</DeltaT>
+         </DiffusionData>
+      </DiffusionField>
+   </Steppable>
+   
+    <Plugin Name="PDESolverCaller">
+        <CallPDE PDESolverName="DiffusionSolverFE" ExtraTimesPerMC="4"/>
+    </Plugin>    
+    
+   <Steppable Type="DiffusionSolverFE">
+      <!-- Specification of PDE solvers -->
+   
+      <DiffusionField Name="lac">
+         <DiffusionData>
+            <FieldName>lac</FieldName>
+            <GlobalDiffusionConstant>0.15</GlobalDiffusionConstant>
+            <GlobalDecayConstant>0.1</GlobalDecayConstant>
+            <DiffusionCoefficient CellType="PROL">0.5</DiffusionCoefficient>
+            <DiffusionCoefficient CellType="RESE">0.5</DiffusionCoefficient>
+            <DiffusionCoefficient CellType="INVA">1</DiffusionCoefficient>
+            <DiffusionCoefficient CellType="NECR">0</DiffusionCoefficient>
+            <!-- <DecayCoefficient CellType="NECR">0</DecayCoefficient> -->
+         </DiffusionData>
+         <SecretionData>
+            <Secretion Type="PROL">0.1</Secretion>
+            <Uptake Type="INVA" MaxUptake="0.01" RelativeUptakeRate="0.99"/>
+         </SecretionData>
+         <BoundaryConditions>
+            <Plane Axis="X">
+               <ConstantDerivative PlanePosition="Min" Value="0.0"/>
+               <ConstantDerivative PlanePosition="Max" Value="0.0"/>            
+            </Plane>
+            <Plane Axis="Y">
+               <ConstantDerivative PlanePosition="Min" Value="0.0"/>
+               <ConstantDerivative PlanePosition="Max" Value="0.0"/>            
+            </Plane>
+         </BoundaryConditions>
+      </DiffusionField>      
+      
+      <DiffusionField Name="akg">
+         <DiffusionData>
+            <FieldName>akg</FieldName>
+            <GlobalDiffusionConstant>0.1</GlobalDiffusionConstant>
+            <GlobalDecayConstant>1e-05</GlobalDecayConstant>
+            <!-- Additional options are: -->
+            <!-- <InitialConcentrationExpression>x*y</InitialConcentrationExpression> -->
+            <!-- <ConcentrationFileName>INITIAL CONCENTRATION FIELD - typically a file with path Simulation/NAME_OF_THE_FILE.txt</ConcentrationFileName> -->
+            <DiffusionCoefficient CellType="PROL">0.1</DiffusionCoefficient>
+            <DiffusionCoefficient CellType="RESE">0.1</DiffusionCoefficient>
+            <DiffusionCoefficient CellType="INVA">0.1</DiffusionCoefficient>
+            <DiffusionCoefficient CellType="NECR">0</DiffusionCoefficient>
+            <!-- <DecayCoefficient CellType="NECR">0</DecayCoefficient> -->
+         </DiffusionData>
+         <SecretionData>
+            <!-- When secretion is defined inside DissufionSolverFE all secretion constants are scaled automaticaly to account for the extra calls to the diffusion step when handling large diffusion constants -->
+            
+            <!-- Uniform secretion Definition -->
+            <Secretion Type="RESE">0.1</Secretion>
+            <Uptake Type="INVA" MaxUptake="0.0001" RelativeUptakeRate="0.99"/>
+         </SecretionData>
+         <BoundaryConditions>
+            <Plane Axis="X">
+               <ConstantDerivative PlanePosition="Min" Value="0.0"/>
+               <ConstantDerivative PlanePosition="Max" Value="0.0"/>
+            </Plane>
+            <Plane Axis="Y">
+               <ConstantDerivative PlanePosition="Min" Value="0.0"/>
+               <ConstantDerivative PlanePosition="Max" Value="0.0"/>
+            </Plane>
+         </BoundaryConditions>
+      </DiffusionField>
+      
+      <DiffusionField Name="fum">
+         <DiffusionData>
+            <FieldName>fum</FieldName>
+            <GlobalDiffusionConstant>0.1</GlobalDiffusionConstant>
+            <GlobalDecayConstant>1e-05</GlobalDecayConstant>
+            <!-- Additional options are: -->
+            <!-- <InitialConcentrationExpression>x*y</InitialConcentrationExpression> -->
+            <!-- <ConcentrationFileName>INITIAL CONCENTRATION FIELD - typically a file with path Simulation/NAME_OF_THE_FILE.txt</ConcentrationFileName> -->
+            <DiffusionCoefficient CellType="PROL">0.1</DiffusionCoefficient>
+            <DiffusionCoefficient CellType="RESE">0.1</DiffusionCoefficient>
+            <DiffusionCoefficient CellType="INVA">0.1</DiffusionCoefficient>
+            <DiffusionCoefficient CellType="NECR">0</DiffusionCoefficient>
+            <!-- <DecayCoefficient CellType="NECR">0</DecayCoefficient> -->
+         </DiffusionData>
+         <SecretionData>
+            <!-- When secretion is defined inside DissufionSolverFE all secretion constants are scaled automaticaly to account for the extra calls to the diffusion step when handling large diffusion constants -->
+            <!-- Uniform secretion Definition -->
+            <Secretion Type="RESE">0.1</Secretion>
+            <Uptake Type="PROL" MaxUptake="0.01" RelativeUptakeRate="0.99"/>
+         </SecretionData>
+         <BoundaryConditions>
+            <Plane Axis="X">
+               <ConstantDerivative PlanePosition="Min" Value="0.0"/>
+               <ConstantDerivative PlanePosition="Max" Value="0.0"/>
+            </Plane>
+            <Plane Axis="Y">
+               <ConstantDerivative PlanePosition="Min" Value="0.0"/>
+               <ConstantDerivative PlanePosition="Max" Value="0.0"/>
+            </Plane>
+         </BoundaryConditions>
+      </DiffusionField>
+   </Steppable>
+
+    <Steppable Type="ReactionDiffusionSolverFE">
+    <AutoscaleDiffusion/>
+    <DeltaX>2.0</DeltaX>
+    <DeltaY>2.0</DeltaY>
+    <AutoTimeSubStep/>
+    <FluctuationCompensator/>
+
+        <DiffusionField Name="h3o">
+            <DiffusionData>
+                <FieldName>h3o</FieldName>
+                <DiffusionConstant>0.1</DiffusionConstant>
+                <DiffusivityFieldInMedium/>
+                <SimplePermInt/>
+            </DiffusionData>
+            <SecretionData>
+                <Secretion Type="PROL">0.05</Secretion>
+            </SecretionData>
+            <ReactionData>
+                <ExpressionSymbol>h3o</ExpressionSymbol>
+                <ExpressionMult>(-0.01 * hco3)</ExpressionMult>
+                <ExpressionIndep>0</ExpressionIndep>
+            </ReactionData>
+        </DiffusionField>
+        
+        <DiffusionField Name="hco3">
+            <DiffusionData>
+                <FieldName>hco3</FieldName>
+                <DiffusionConstant>0.1</DiffusionConstant>
+                <DiffusivityFieldInMedium/>
+                <SimplePermInt/>
+            </DiffusionData>
+            <SecretionData>
+                <Secretion Type="RESE">0.01</Secretion>
+                <Secretion Type="INVA">0.01</Secretion>
+            </SecretionData>
+            <ReactionData>
+                <ExpressionSymbol>hco3</ExpressionSymbol>
+                <ExpressionMult>(-0.01 * h3o)</ExpressionMult>
+                <ExpressionIndep>0</ExpressionIndep>
+            </ReactionData>
+        </DiffusionField>
+    </Steppable>
+   
+   <Steppable Type="BlobInitializer">
+      <Region>
+         <Center x="500" y="500" z="1"/>
+         <Radius>16</Radius>
+         <Gap>0</Gap>
+         <Width>6</Width>
+         <Types>PROL</Types>
+      </Region>
+   </Steppable>
+</CompuCell3D> 
