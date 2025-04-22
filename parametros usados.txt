@@ -1,0 +1,629 @@
+ <!--
+    1 voxel (side)= 4 um
+    1 voxel (volume)= 64 um^3
+    density of lattice ~ density of water
+    Total simulated mass = 50*50*80 *(4um)^3 gram/cm^3= 1.28*10^-5 gram
+    1 MCS ~ `min (typical)
+    tumor cell volume = 32 voxels * 64 um^3/voxel = 2048 um^3
+    fastest (simulated) tumor cell cycle is 24hours or 1440 mcs when glucose is high so 32voxels/1440mcs= 0.022 voxel/mcs
+    tumor cell growth equation;
+          cell.targetVolume+=0.022*GlucoseConcentration/(0.05 + GlucoseConcentration)
+
+    Glucose diffusion Coeff = 600 um^2/sec = 600 um^2/sec *(voxel/4um)^2 * (60sec/MCS)=2250 voxel^2/MCS
+    Glucose Uptake (Stromal Tissue)= 0.1 umol/gram/min (estimated)
+    Glucose Uptake (Tumor)~ 0.3 umol/g/min (exprimentally measured [http://cancerres.aacrjournals.org/content/48/24_Part_1/7264.short])
+
+    Total Glucose Uptake (simulated stroma without tumor) ~ 1.28*10^-5 gram * 0.1 umol/gram/min
+                            = 1.28 pmol/min
+                            = 1.28 pmol/MCS
+
+    Total # of Vacular cells = 24 cells
+    Glucose Secereted per Vascular Cell = 1.28/24 pmol/MCS/cell = 0.053 pmol/MCS/cell
+    Glucose Secereted per Voxel of Vascular Cell =  Glucose Secereted per Vascular Cell/(cell volume)
+                             = 0.053/64 pmol/MCS/voxel = 0.0008 pmol/MCS/voxel
+                             =0,8 fmol/MCS/voxel
+   Typical Glucose Uptake by Medium (stroma) voxel = 1.28 pmol/MCS/(~20000 Medium voxels) =6.4*10^-6 pmol/MCS/voxel
+                        = 6.4*10^-3 fmol/MCS/voxel
+    (assumed) Max Glucose Uptake by Medium (stroma) voxel = 1.28 * 10^-2 fmol/MCS/voxel
+    typical tumor cell density in tumor ~ 10^8 cells/cm^3
+    Glucose Uptake by a tumor cell ~  (0.3 umol/g/mcs)/(10^8 cells per gram)
+                  = 0.003 pmol/mcs/cell
+                  = 0.003 pmol/mcs/(32 voxel)
+                  ~ 10^-4 pmol/MCS/voxel
+                  = 0.1 fmol/MCS/voxel
+
+    (assumed) Max Glucose Uptake by a tumor cell = 0.2 fmol/MCS/voxel
+
+    Max stable FlexibleDiffusionSolverFE diffusion constant in 3D ~ 0.15 voxel^2/MCS
+    Number of Field updates per MCS needed (ExtraTimesPerMC) = 2250 voxel^2/MCS/0.15= 15000 field updates per MCS
+    we set ExtraTimesPerMC=9 (10 updates), so glucose diffusion is 1500 slower, resulting in steep glucose gradients and smaller tumors
+    -->
+
+
+
+
+
+from cc3d.core.PySteppables import *
+import numpy as np
+import random
+import logging
+import gc
+import os
+
+
+# Configurar el logger
+
+# Definir carpeta de salida
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Configurar el logger para que guarde dentro de results
+logging.basicConfig(
+    filename=os.path.join(OUTPUT_DIR, 'cambios_simulacion.log'),
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# -----------------------------------------------------------------------------------
+# Definición de constantes para la simulación
+#  Fuentes de datos experimentales:
+# - Volumen celular y tiempos de duplicación:
+#   - Chen et al., 2013, "Single-cell analysis of cell size and cell cycle phase in MCF7 cells"
+#   - Sinha et al., 2011, "Cell volume and drug uptake in MCF7 breast cancer cells"
+#   - Gong et al., 2015, "Tracking volume and density of MCF7 cells using digital holographic microscopy"
+# - Consumo metabólico (glucosa, oxígeno):
+#   - Basado en simulaciones de CompuCell3D de tejido tumoral estándar.
+#   - Consumo tumoral de glucosa: Cancer Res, 1988 ([enlace](http://cancerres.aacrjournals.org/content/48/24_Part_1/7264.short)).
+#
+#  Justificación de tiempos de transición fenotípica y muerte celular:
+# - Tiempos de ciclo celular: ~30-50 horas para células tumorales MCF7 bajo condiciones favorables.
+# - Transiciones de estrés/muerte definidas en escalas de:
+#   - 6–12 horas (transición leve: PROL → RESE)
+#   - 24–48 horas (transición severa: RESE → INVA)
+#   - 8–12 horas (recuperación: RESE → PROL)
+#   - 16–48 horas (reversión: INVA → RESE)
+# - Muerte celular: Acumulación de daño severo ≥15 horas continuas (DEATH_DELAY + DEATH_MCS_THRESHOLD).
+# -----------------------------------------------------------------------------------
+
+# Definición de constantes para los tipos de células
+CELL_TYPE_PROL = 1  # Proliferativa
+CELL_TYPE_RESE = 2  # Reserva
+CELL_TYPE_INVA = 3  # Invasiva
+CELL_TYPE_NECR = 4  # Necrótica
+
+# Definición de constantes para umbrales y parámetros metabólicos
+MCS_INIT_EVO = 72   # (Acortado) ~6 horas para formación inicial del microambiente
+o2_THRESHOLD = 180  # µM - nivel óptimo de oxígeno
+o2_THRESHOLD_HIPO = 15  # µM - hipoxia severa
+glc_THRESHOLD = 10  # mM - concentración alta de glucosa
+glc_THRESHOLD_HIPO = 0.5  # mM - hipoglucemia severa
+lac_THRESHOLD_ACIDIC = 10  # mM - estrés ácido
+lac_THRESHOLD_TOXIC = 20   # mM - toxicidad severa
+
+# Parámetros de volumen y crecimiento
+INITIAL_TARGET_VOLUME = 32  # voxels (~2048 µm³)
+INITIAL_LAMBDA_VOLUME = 2.0
+MITOSIS_VOLUME_THRESHOLD = 64  # Volumen duplicado para división
+GROWTH_RATE_PROL = 0.022  # voxels por MCS
+
+# pH óptimo para proliferación
+OPTIMAL_h3o = 7.2  # pH 7.2 (condiciones fisiológicas)
+
+# Parámetros de mutación y muerte
+MUTATION_PERC = 0.05  # 5% de células elegibles para mutar
+MUTATION_DELAY = 288  # ~24 horas para permitir microambiente maduro
+DEATH_DELAY = 180     # ~15 horas de exposición crítica para activar muerte
+MUTATION_PROBABILITY = 0.01  # Baja tasa de mutación aleatoria
+
+# Umbrales de cambio fenotípico (en MCS)
+MCS_PROL_TO_RESE = 144     # 6–12 horas (estrés moderado)
+MCS_RESE_TO_INVA = 288     # 24–48 horas (estrés severo)
+MCS_RESE_TO_PROL = 96      # 8–12 horas (recuperación parcial)
+MCS_INVA_TO_RESE = 192     # 16–48 horas (normalización ambiental)
+DEATH_MCS_THRESHOLD = 180  # 12–15 horas (estrés sostenido antes de morir)
+
+
+class EnvironmentEvaluator:
+    def __init__(self, field_accessor):
+        self.fields = field_accessor
+        self.O2_OPTIMAL = 180
+        self.GLC_OPTIMAL = 10
+        self.LAC_OPTIMAL = 2.0
+        self.TOL_O2 = 40
+        self.TOL_GLC = 2
+        self.TOL_LAC = 1
+
+    def is_optimal(self, cell):
+        o2 = self.fields.get(cell, 'o2')
+        glc = self.fields.get(cell, 'glc')
+        lac = self.fields.get(cell, 'lac')
+
+        o2_ok = abs(o2 - self.O2_OPTIMAL) <= self.TOL_O2
+        glc_ok = abs(glc - self.GLC_OPTIMAL) <= self.TOL_GLC
+        lac_ok = abs(lac - self.LAC_OPTIMAL) <= self.TOL_LAC
+
+        return o2_ok and glc_ok and lac_ok
+        
+    def is_stressed(self, cell):
+        o2 = self.fields.get(cell, 'o2')
+        glc = self.fields.get(cell, 'glc')
+        lac = self.fields.get(cell, 'lac')
+    
+        o2_stress = o2 < o2_THRESHOLD_HIPO
+        glc_stress = glc < glc_THRESHOLD_HIPO
+        lac_high = lac > lac_THRESHOLD_ACIDIC  # Less severe than toxic
+    
+        return o2_stress and glc_stress
+        
+class FieldAccessor:
+    def __init__(self, field_obj, default=0.0):
+        """
+        Acceso seguro a campos químicos.
+        Recupera las dimensiones del espacio de simulación directamente.
+        """
+        self.fields = field_obj
+        self.default = default
+
+        try:
+            simulator = get_simulator()
+            self.dim = simulator.getPotts().getCellFieldG().getDim()
+        except Exception as e:
+            logging.warning(f"⚠️ FieldAccessor: no se pudo obtener dimensiones del simulador: {e}")
+            self.dim = None
+
+    def get(self, cell, field_name):
+        try:
+            if cell is None:
+                return self.default
+
+            field_name = field_name.lower()
+            field = getattr(self.fields, field_name, None)
+
+            if field is None:
+                logging.warning(f"⚠️ Campo '{field_name}' no disponible.")
+                return self.default
+
+            x, y, z = int(cell.xCOM), int(cell.yCOM), int(cell.zCOM)
+
+            if self.dim:
+                if not (0 <= x < self.dim.x and 0 <= y < self.dim.y and 0 <= z < self.dim.z):
+                    return self.default
+
+            return field[x, y, z]
+
+        except Exception as e:
+            logging.warning(f"⚠️ Error accediendo a campo '{field_name}' en célula {getattr(cell, 'id', 'None')}: {e}")
+            return self.default
+
+class ConstraintInitializerSteppable(SteppableBasePy):
+    def __init__(self, frequency=1):
+        super().__init__(frequency)
+        self.initialized = False
+
+    def start(self):
+        try:
+            if self.initialized:
+                return
+
+            for cell in self.cell_list:
+                if cell is None:
+                    continue
+                if cell.type in [CELL_TYPE_PROL, CELL_TYPE_RESE, CELL_TYPE_INVA]:
+                    cell.targetVolume = INITIAL_TARGET_VOLUME
+                    cell.lambdaVolume = INITIAL_LAMBDA_VOLUME
+                else:
+                    cell.targetVolume = 20  # Para células necróticas u otras
+                    cell.lambdaVolume = 50
+
+            self.initialized = True
+            gc.collect()  # Limpieza de memoria
+        except Exception as e:
+            logging.error(f"Error en ConstraintInitializerSteppable.start: {str(e)}")
+            self.initialized = False
+
+class GrowthSteppable(SteppableBasePy):
+    def __init__(self, frequency=1):
+        super().__init__(frequency)
+        self.field_accessor = None
+        self.env = None
+        self.growth_log = []  # Lista para guardar los datos de crecimiento
+
+    def start(self):
+        try:
+            if not hasattr(self.field, 'o2') or self.field.o2 is None:
+                logging.error("Campo o2 no disponible o es None")
+                return
+
+            self.field_accessor = FieldAccessor(self.field)
+            self.env = EnvironmentEvaluator(self.field_accessor)
+            logging.info("✅ FieldAccessor inicializado en GrowthSteppable")
+        except Exception as e:
+            logging.error(f"❌ Error en GrowthSteppable.start: {str(e)}")
+
+    def get_metabolic_values(self, cell):
+        """Accede a los valores metabólicos usando FieldAccessor."""
+        if not self.field_accessor or cell is None:
+            return (0.0, 0.0, 0.0, 0.0)
+
+        o2 = self.field_accessor.get(cell, 'o2')
+        glc = self.field_accessor.get(cell, 'glc')
+        h3o = self.field_accessor.get(cell, 'h3o')
+        lac = self.field_accessor.get(cell, 'lac')
+
+        return (o2, glc, h3o, lac)
+
+    def step(self, mcs):
+        """Ejecuta el paso de crecimiento para todas las células no necróticas."""
+        try:
+            if not self.field_accessor or not self.env:
+                return
+
+            for cell in self.cell_list:
+                if cell is None or cell.type == CELL_TYPE_NECR:
+                    continue
+
+                try:
+                    o2_conc, glc_conc, h3o_conc, lac_conc = self.get_metabolic_values(cell)
+                    self.calculate_growth(cell, o2_conc, glc_conc, h3o_conc, lac_conc)
+                except Exception as e:
+                    if mcs % 50 == 0:
+                        logging.error(f"Error procesando célula {cell.id if cell else 'None'}: {str(e)}")
+                    continue
+    
+            if mcs % 100 == 0:
+                gc.collect()
+    
+        except Exception as e:
+            if mcs % 50 == 0:
+                logging.error(f"Error en GrowthSteppable.step: {str(e)}")
+
+    def calculate_growth(self, cell, o2, glc, h3o, lac):
+        """
+        Aplica crecimiento de volumen según el tipo celular y la concentración local de glucosa.
+        """
+        if not self.env.is_optimal(cell):
+            return
+
+        # Tasas de crecimiento base según fenotipo
+        base_growth_rates = {
+            CELL_TYPE_PROL: 0.022,  # Proliferativas
+            CELL_TYPE_RESE: 0.01,   # Reservorio
+            CELL_TYPE_INVA: 0.015   # Invasivas
+        }
+
+        growth_base = base_growth_rates.get(cell.type, 0.005)
+
+        # Fórmula Michaelis-Menten para la glucosa
+        effective_glc = max(glc, 0.001)  # evitar división por cero
+        growth_factor = effective_glc / (0.05 + effective_glc)
+        delta_volume = growth_base * growth_factor
+        
+
+        cell.targetVolume += delta_volume
+
+        # Guardar en el log
+        self.growth_log.append({
+            'MCS': self.simulator.getStep(),
+            'CellID': cell.id,
+            'Type': cell.type,
+            'DeltaVolume': round(delta_volume, 4),
+            'NewTargetVolume': round(cell.targetVolume, 2),
+            'LocalGLC': round(glc, 2)
+        })
+
+    def finish(self):
+        try:
+            # Guardar volumen final de células
+            with open("volumen_final_celulas.csv", "w", newline="") as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(["Cell ID", "Type", "Current Volume", "Target Volume"])
+                for cell in self.cell_list:
+                    if cell is None:
+                        continue
+                    tipo_nombre = {
+                        CELL_TYPE_PROL: "PROL",
+                        CELL_TYPE_RESE: "RESE",
+                        CELL_TYPE_INVA: "INVA",
+                        CELL_TYPE_NECR: "NECR"
+                    }.get(cell.type, f"Type {cell.type}")
+                    writer.writerow([
+                        cell.id,
+                        tipo_nombre,
+                        round(cell.volume, 2),
+                        round(cell.targetVolume, 2)
+                    ])
+
+            # Guardar log de crecimiento
+            output_path_growth = os.path.join(self.output_dir, "growth_log.csv")
+            with open("growth_log.csv", "w", newline="") as logfile:
+                fieldnames = ['MCS', 'CellID', 'Type', 'DeltaVolume', 'NewTargetVolume', 'LocalGLC']
+                writer = csv.DictWriter(logfile, fieldnames=fieldnames)
+                writer.writeheader()
+                for entry in self.growth_log:
+                    writer.writerow(entry)
+
+            logging.info("📤 Exportaciones finalizadas: volumen_final_celulas.csv y growth_log.csv")
+
+        except Exception as e:
+            if mcs % 50 == 0:
+                logging.error(f"❌ Error exportando archivos al finalizar la simulación: {e}")
+
+
+class MitosisSteppable(MitosisSteppableBase):
+    def __init__(self, frequency=1):
+        super().__init__(frequency)
+
+    def step(self, mcs):
+        if mcs < MCS_INIT_EVO:
+            return
+
+        cells_to_divide = []
+
+        for cell in self.cell_list:
+            if cell.type == CELL_TYPE_NECR:
+                continue  # Omitir células necróticas
+
+            if cell.volume > MITOSIS_VOLUME_THRESHOLD:  # ← Aquí ya usa el correcto
+                cells_to_divide.append(cell)
+
+        for cell in cells_to_divide:
+            self.divide_cell_random_orientation(cell)
+
+    def update_attributes(self):
+        parent_cell = self.parent_cell
+        parent_cell.targetVolume /= 2.0  # Dividir volumen de la madre en 2
+        self.clone_parent_2_child()
+        
+class DeathSteppable(SteppableBasePy):
+    def __init__(self, frequency=1):
+        super().__init__(frequency)
+        self.critical_condition_counter = {}
+        self.field_accessor = None
+        self.env = None
+
+    def start(self):
+        try:
+            if not hasattr(self.field, 'o2') or self.field.o2 is None:
+                logging.error("Campo o2 no disponible en DeathSteppable")
+                return
+            self.field_accessor = FieldAccessor(self.field)
+            self.env = EnvironmentEvaluator(self.field_accessor)
+            logging.info("✅ FieldAccessor y EnvironmentEvaluator inicializados en DeathSteppable")
+        except Exception as e:
+            logging.error(f"Error inicializando FieldAccessor en DeathSteppable: {e}")
+
+    def step(self, mcs):
+        if mcs < DEATH_DELAY or not self.field_accessor or not self.env:
+            return
+
+        try:
+            # Limpiar IDs de células eliminadas
+            cell_ids_actuales = {cell.id for cell in self.cell_list}
+            ids_a_eliminar = set(self.critical_condition_counter.keys()) - cell_ids_actuales
+            for dead_cell_id in ids_a_eliminar:
+                del self.critical_condition_counter[dead_cell_id]
+
+            for cell in self.cell_list:
+                if cell.type == CELL_TYPE_NECR:
+                    continue
+
+                o2_conc = self.field_accessor.get(cell, 'o2')
+                glc_conc = self.field_accessor.get(cell, 'glc')
+                lac_conc = self.field_accessor.get(cell, 'lac')
+
+                if cell.id not in self.critical_condition_counter:
+                    self.critical_condition_counter[cell.id] = 0
+
+                # 🔥 Ambiente estresante
+                if self.env.is_stressed(cell):
+                    if cell.type == CELL_TYPE_INVA and lac_conc > lac_THRESHOLD_TOXIC:
+                        self.critical_condition_counter[cell.id] = max(0, self.critical_condition_counter[cell.id] - 1)
+                    else:
+                        self.critical_condition_counter[cell.id] += 1
+
+                # ✅ Recuperación
+                elif o2_conc >= o2_THRESHOLD_HIPO and glc_conc >= glc_THRESHOLD_HIPO:
+                    self.critical_condition_counter[cell.id] = max(0, self.critical_condition_counter[cell.id] - 2)
+
+                # 💀 Muerte por estrés prolongado
+                if self.critical_condition_counter[cell.id] >= DEATH_MCS_THRESHOLD:
+                    cell.type = CELL_TYPE_NECR
+                    cell.targetVolume = 25
+                    cell.lambdaVolume = 50.0
+                    logging.info(f"💀 MCS {mcs}: Célula {cell.id} ha muerto tras {self.critical_condition_counter[cell.id]} MCS en estrés.")
+
+            if mcs % 100 == 0:
+                gc.collect()
+
+        except Exception as e:
+            if mcs % 50 == 0:
+                logging.error(f"Error en DeathSteppable.step: {str(e)}")      
+
+                
+class MutationSteppable(SteppableBasePy):
+    def __init__(self, frequency=1):
+        super().__init__(frequency)
+        self.mutation_count = 0
+        self.mutation_interval = 500
+        self.cell_conditions = {}
+        self.mutation_percentage = MUTATION_PERC
+        self.initial_mutation_delay = MUTATION_DELAY
+        self.transition_counts = {
+            "PROL→RESE": 0,
+            "RESE→INVA": 0,
+            "RESE→PROL": 0,
+            "INVA→RESE": 0
+        }
+        self.field_accessor = None
+
+    def start(self):
+        if not hasattr(self.field, 'o2') or self.field.o2 is None:
+            logging.error("Campo o2 no disponible o es None")
+            return
+        self.field_accessor = FieldAccessor(self.field)
+        self.env = EnvironmentEvaluator(self.field_accessor)
+
+    def step(self, mcs):
+        if mcs < self.initial_mutation_delay or not self.field_accessor:
+            return
+
+        for cell in self.cell_list:
+            if cell.type == CELL_TYPE_NECR:
+                continue
+
+            o2_conc = self.field_accessor.get(cell, 'o2')
+            glc_conc = self.field_accessor.get(cell, 'glc')
+            lac_conc = self.field_accessor.get(cell, 'lac')
+
+            self.check_and_mutate(cell, o2_conc, glc_conc, lac_conc, mcs)
+            self.update_condition_counters(cell, o2_conc, glc_conc, lac_conc)
+            self.apply_phenotype_changes(cell, mcs)
+
+        self.perform_random_mutations(mcs)
+    
+    def check_and_mutate(self, cell, o2_conc, glc_conc, lac_conc, mcs):
+        """Verifica si una célula puede mutar según las condiciones del microambiente."""
+        if cell.type in [CELL_TYPE_PROL, CELL_TYPE_RESE, CELL_TYPE_INVA]:
+            if o2_conc < o2_THRESHOLD and glc_conc < glc_THRESHOLD:
+                new_type = self.get_new_cell_type(cell.type)
+                cell.type = new_type
+                self.mutation_count += 1
+                logging.info(f"🔬 Célula {cell.id} mutó a tipo {new_type} debido a hipoxia en MCS {mcs}.")    
+                            
+    def update_condition_counters(self, cell, o2_conc, glc_conc, lac_conc):
+        """
+        Actualiza contadores para transición de fenotipos basada en el entorno metabólico.
+        Se consideran los 4 posibles cambios:
+        - PROL → RESE
+        - RESE → INVA
+        - RESE → PROL
+        - INVA → RESE
+        """
+    
+        if cell.id not in self.cell_conditions:
+            self.cell_conditions[cell.id] = {
+                'low_o2_low_glu_prol_to_rese': 0,
+                'low_o2_low_glu_rese_to_inva': 0,
+                'high_o2_high_glu_rese_to_prol': 0,
+                'high_o2_high_glu_inva_to_rese': 0,
+            }
+    
+        conditions = self.cell_conditions[cell.id]
+    
+        # --------------------------------------
+        # 🔁 PROLIFERATIVA → RESERVA (estrés leve)
+        # --------------------------------------
+        if cell.type == CELL_TYPE_PROL and (o2_THRESHOLD_HIPO <= o2_conc <= o2_THRESHOLD and glc_THRESHOLD_HIPO <= glc_conc <= glc_THRESHOLD):
+            conditions['low_o2_low_glu_prol_to_rese'] += 1
+            logging.info(f"⚠️ Célula {cell.id} (PROL) puede volverse RESE en {MCS_PROL_TO_RESE - conditions['low_o2_low_glu_prol_to_rese']} MCS")
+        else:
+            conditions['low_o2_low_glu_prol_to_rese'] = max(0, conditions['low_o2_low_glu_prol_to_rese'] - 2)
+    
+        # --------------------------------------
+        # 🔁 RESERVA → INVASIVA (estrés severo)
+        # --------------------------------------
+        if cell.type == CELL_TYPE_RESE and self.env.is_stressed(cell):
+            conditions['low_o2_low_glu_rese_to_inva'] += 1
+            logging.info(f"⚠️ Célula {cell.id} (RESE) en estrés → puede volverse INVA en {MCS_RESE_TO_INVA - conditions['low_o2_low_glu_rese_to_inva']} MCS")
+        else:
+            conditions['low_o2_low_glu_rese_to_inva'] = max(0, conditions['low_o2_low_glu_rese_to_inva'] - 2)
+    
+        # --------------------------------------
+        # 🔁 RESERVA → PROLIFERATIVA (recuperación)
+        # --------------------------------------
+        if cell.type == CELL_TYPE_RESE:
+            if self.env.is_optimal(cell):
+                conditions['high_o2_high_glu_rese_to_prol'] += 1
+                logging.info(f"🟢 Célula {cell.id} (RESE) en ambiente óptimo: revertirá a PROL en {MCS_RESE_TO_PROL - conditions['high_o2_high_glu_rese_to_prol']} MCS")
+            elif o2_conc > o2_THRESHOLD_HIPO and glc_conc > glc_THRESHOLD_HIPO:
+                conditions['high_o2_high_glu_rese_to_prol'] += 1
+                logging.info(f"🟢 Célula {cell.id} (RESE) en buenas condiciones: revertirá a PROL en {MCS_RESE_TO_PROL - conditions['high_o2_high_glu_rese_to_prol']} MCS")
+            else:
+                conditions['high_o2_high_glu_rese_to_prol'] = max(0, conditions['high_o2_high_glu_rese_to_prol'] - 2)
+    
+        # --------------------------------------
+        # 🔁 INVASIVA → RESERVA (reversión)
+        # --------------------------------------
+        if cell.type == CELL_TYPE_INVA:
+            if self.env.is_optimal(cell):
+                conditions['high_o2_high_glu_inva_to_rese'] += 1
+                logging.info(f"🟢 Célula {cell.id} (INVA) en ambiente óptimo: revertirá a RESE en {MCS_INVA_TO_RESE - conditions['high_o2_high_glu_inva_to_rese']} MCS")
+            elif o2_conc >= o2_THRESHOLD_HIPO and glc_conc >= glc_THRESHOLD_HIPO:
+                conditions['high_o2_high_glu_inva_to_rese'] += 1
+                logging.info(f"🟢 Célula {cell.id} (INVA) en buenas condiciones: revertirá a RESE en {MCS_INVA_TO_RESE - conditions['high_o2_high_glu_inva_to_rese']} MCS")
+            else:
+                conditions['high_o2_high_glu_inva_to_rese'] = max(0, conditions['high_o2_high_glu_inva_to_rese'] - 2)
+
+    def apply_phenotype_changes(self, cell, mcs):
+        """
+        Aplica los cambios de fenotipo en la célula según los contadores de condición.
+        Cada transición tiene su propio umbral temporal definido en MCS.
+        """
+    
+        if mcs < self.initial_mutation_delay:
+            return
+    
+        conditions = self.cell_conditions[cell.id]
+    
+        # PROL → RESE
+        if conditions['low_o2_low_glu_prol_to_rese'] >= MCS_PROL_TO_RESE:
+            cell.type = CELL_TYPE_RESE
+            self.transition_counts["PROL→RESE"] += 1
+            logging.info(f"🔄 PROL → RESE in cell {cell.id} at MCS {mcs}")
+    
+        # RESE → INVA
+        elif conditions['low_o2_low_glu_rese_to_inva'] >= MCS_RESE_TO_INVA:
+            cell.type = CELL_TYPE_INVA
+            self.transition_counts["RESE→INVA"] += 1
+            logging.info(f"🔄 RESE → INVA in cell {cell.id} at MCS {mcs}")
+    
+        # RESE → PROL
+        elif conditions['high_o2_high_glu_rese_to_prol'] >= MCS_RESE_TO_PROL:
+            cell.type = CELL_TYPE_PROL
+            self.transition_counts["RESE→PROL"] += 1
+            logging.info(f"🔄 RESE → PROL in cell {cell.id} at MCS {mcs}")
+    
+        # INVA → RESE
+        elif conditions['high_o2_high_glu_inva_to_rese'] >= MCS_INVA_TO_RESE:
+            cell.type = CELL_TYPE_RESE
+            self.transition_counts["INVA→RESE"] += 1
+            logging.info(f"🔄 INVA → RESE in cell {cell.id} at MCS {mcs}")
+    
+    def get_new_cell_type(self, current_type):
+        """Devuelve un nuevo tipo de célula basado en el tipo actual."""
+        if current_type == CELL_TYPE_PROL:
+            return random.choice([CELL_TYPE_RESE, CELL_TYPE_INVA])
+        elif current_type == CELL_TYPE_RESE:
+            return random.choice([CELL_TYPE_PROL, CELL_TYPE_INVA])
+        else:
+            return random.choice([CELL_TYPE_PROL, CELL_TYPE_RESE])
+                
+    def perform_random_mutations(self, mcs):
+        """Realiza mutaciones aleatorias en células cada `mutation_interval` pasos."""
+        if mcs < self.initial_mutation_delay or mcs % self.mutation_interval != 0:
+            return        
+        eligible_cells = [cell for cell in self.cell_list if cell.type in [CELL_TYPE_PROL, CELL_TYPE_RESE, CELL_TYPE_INVA]]
+        if eligible_cells:
+            num_mutations = max(1, int(len(eligible_cells) * self.mutation_percentage))
+            cells_to_mutate = random.sample(eligible_cells, min(num_mutations, len(eligible_cells)))
+
+            for cell in cells_to_mutate:
+                new_type = self.get_new_cell_type(cell.type)
+                cell.type = new_type
+                self.mutation_count += 1
+                logging.info(f"🔀 Mutación aleatoria: Célula {cell.id} ahora es tipo {new_type} en MCS {mcs}.")      \
+    
+    def finish(self):
+        try:
+            output_file = os.path.join(OUTPUT_DIR, "transition_counts.csv")
+            with open(output_file, "w", newline="") as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(["Transition", "Count"])
+                for key, val in self.transition_counts.items():
+                    writer.writerow([key, val])
+    
+            logging.info("📤 Exportación de conteos de transición finalizada: transition_counts.csv en SimulationOutputs/")
+    
+        except Exception as e:
+            logging.error(f"❌ Error exportando transition_counts.csv: {e}")    
+              

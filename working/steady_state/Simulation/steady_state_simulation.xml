@@ -12,9 +12,9 @@
       
       <!-- Basic properties of CPM (GGH) algorithm -->
       <Dimensions x="1000" y="1000" z="2"/>
-      <Steps>500</Steps>
-      <Temperature>20.0</Temperature>
-      <NeighborOrder>4</NeighborOrder>
+      <Steps>5000</Steps>
+      <Temperature>10.0</Temperature>
+      <NeighborOrder>1</NeighborOrder>
    </Potts>
    
     <Plugin Name="CellType">
@@ -58,7 +58,7 @@
         <Energy Type1="INVA" Type2="INVA">40.0</Energy>
         <Energy Type1="INVA" Type2="NECR">40.0</Energy>
         <Energy Type1="NECR" Type2="NECR">10.0</Energy>
-        <NeighborOrder>4</NeighborOrder>
+        <NeighborOrder>2</NeighborOrder>
     </Plugin>
    
    <Plugin Name="Chemotaxis">
@@ -66,14 +66,14 @@
       <!-- You may repeat ChemicalField element for each chemical field declared in the PDE solvers -->
       <!-- Specification of chemotaxis properties of select cell types. -->
       <ChemicalField Name="o2">
-         <ChemotaxisByType ChemotactTowards="Medium" Lambda="100.0" Type="INVA"/>
-         <ChemotaxisByType ChemotactTowards="Medium" Lambda="50.0" Type="RESE"/>
-         <ChemotaxisByType ChemotactTowards="Medium" Lambda="10.0" Type="PROL"/>
+         <ChemotaxisByType ChemotactTowards="Medium" Lambda="1000.0" Type="INVA"/>
+         <ChemotaxisByType ChemotactTowards="Medium" Lambda="500.0" Type="RESE"/>
+         <ChemotaxisByType ChemotactTowards="Medium" Lambda="100.0" Type="PROL"/>
       </ChemicalField>
       <ChemicalField Name="glc">
-         <ChemotaxisByType ChemotactTowards="Medium" Lambda="5.0" Type="PROL"/>
-         <ChemotaxisByType ChemotactTowards="Medium" Lambda="30.0" Type="RESE"/>
-         <ChemotaxisByType ChemotactTowards="Medium" Lambda="40.0" Type="PROL"/>
+         <ChemotaxisByType ChemotactTowards="Medium" Lambda="500.0" Type="PROL"/>
+         <ChemotaxisByType ChemotactTowards="Medium" Lambda="300.0" Type="RESE"/>
+         <ChemotaxisByType ChemotactTowards="Medium" Lambda="400.0" Type="PROL"/>
       </ChemicalField>
    </Plugin>
    
@@ -108,7 +108,6 @@
       </Field>
    </Plugin>
 
-   <Steppable Type="KernelDiffusionSolver">
   <!-- 
 =============================================================================
 Datos de calibración del microambiente
@@ -150,39 +149,48 @@ Referencias:
 • Gong et al., 2015 [Cell Volume and Growth]
 • Glazier et al., 2007 [Spatial scaling and voxel size]
 =============================================================================
--->      
-      <!-- Specification of PDE solvers -->
-      <DiffusionField Name="o2">
-         <Kernel>20</Kernel>
-         <DiffusionData>
-            <FieldName>o2</FieldName>
-            <DiffusionConstant>500</DiffusionConstant>
-            <DecayConstant>1e=3</DecayConstant>
+-->
+   <Steppable Type="KernelDiffusionSolver">
+
+        <!-- Specification of PDE solvers -->
+        <!-- OXÍGENO -->
+        <DiffusionField Name="o2">
+            <Kernel>30</Kernel>                  <!-- Más grande → estabilidad mejorada -->
+            <CoarseGrainFactor>2</CoarseGrainFactor>  <!-- Acelera simulación 4x -->
+            <DiffusionData>
+                <FieldName>o2</FieldName>
+                <DiffusionConstant>2000</DiffusionConstant>   <!-- Calculado para 2000 μm²/s -->
+                <DecayConstant>1e-03</DecayConstant>          <!-- Mantener similar -->
+                <DeltaX>2.0</DeltaX>                          <!-- Espacio de grilla -->
+                <DeltaT>2.0</DeltaT>                          <!-- Tiempo de grilla -->
+            </DiffusionData>
+            <SecretionData>
                 <Uptake Type="PROL" MaxUptake="10" RelativeUptakeRate="0.99"/>
                 <Uptake Type="RESE" MaxUptake="2" RelativeUptakeRate="0.99"/>
                 <Uptake Type="INVA" MaxUptake="2" RelativeUptakeRate="0.99"/>
                 <DoNotDecayIn>NECR</DoNotDecayIn>
-            <DeltaX>2.0</DeltaX>
-            <DeltaT>2.0</DeltaT>
-         </DiffusionData>
-      </DiffusionField>
-      
-      <DiffusionField Name="glc">
-         <Kernel>5</Kernel>
-         <DiffusionData>
-            <FieldName>glc</FieldName>
-            <DiffusionConstant>200</DiffusionConstant>
-            <DecayConstant>1e-03</DecayConstant>
+            </SecretionData>
+        </DiffusionField>
+    
+        <!-- GLUCOSA -->
+        <DiffusionField Name="glc">
+            <Kernel>20</Kernel>                  <!-- Menor difusión = kernel más chico -->
+            <CoarseGrainFactor>2</CoarseGrainFactor>
+            <DiffusionData>
+                <FieldName>glc</FieldName>
+                <DiffusionConstant>200</DiffusionConstant>    <!-- Ajustado para 600 μm²/s -->
+                <DecayConstant>1e-03</DecayConstant>
+                <DeltaX>2.0</DeltaX>
+                <DeltaT>2.0</DeltaT>
+            </DiffusionData>
+            <SecretionData>
                 <Uptake Type="PROL" MaxUptake="5" RelativeUptakeRate="0.99"/>
                 <Uptake Type="RESE" MaxUptake="1" RelativeUptakeRate="0.99"/>
                 <Uptake Type="INVA" MaxUptake="1" RelativeUptakeRate="0.99"/>
                 <DoNotDiffuseTo>NECR</DoNotDiffuseTo>
-            <DoNotDiffuseTo>NECR</DoNotDiffuseTo>
-            <DeltaX>2.0</DeltaX>
-            <DeltaT>2.0</DeltaT>
-         </DiffusionData>
-      </DiffusionField>
-   </Steppable>
+            </SecretionData>
+        </DiffusionField>
+    </Steppable>
    
     <Plugin Name="PDESolverCaller">
         <CallPDE PDESolverName="DiffusionSolverFE" ExtraTimesPerMC="4"/>
@@ -331,8 +339,7 @@ Referencias:
       <Region>
          <Center x="500" y="500" z="1"/>
          <Radius>16</Radius>
-         <Gap>0</Gap>
-         <Width>6</Width>
+         <NumberOfCells>560</NumberOfCells> <!-- EXACTAMENTE 560 células -->
          <Types>PROL</Types>
       </Region>
    </Steppable>

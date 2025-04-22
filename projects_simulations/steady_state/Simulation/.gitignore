@@ -1,0 +1,6 @@
+# Ignorar carpeta de resultados
+results/
+*.log
+__pycache__/
+*.pyc
+_settings.sqlite 

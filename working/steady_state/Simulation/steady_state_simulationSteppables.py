@@ -11,39 +11,65 @@ import csv
 
 class LoggerConfig:
     _instance = None
+    _initialized = False
+    _loggers = {}
+    _output_dir = None
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(LoggerConfig, cls).__new__(cls)
-            cls._instance._initialize()
         return cls._instance
 
-    def _initialize(self):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        self.output_dir = os.path.join(current_dir, "results")
-        os.makedirs(self.output_dir, exist_ok=True)
-        self.logs = {}
+    def __init__(self):
+        if not self._initialized:
+            self._initialized = True
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            self._output_dir = os.path.join(current_dir, "results")
+            print(f"📁 Directorio de salida configurado en: {self._output_dir}")
+            os.makedirs(self._output_dir, exist_ok=True)
 
-    def get_logger(self, name):
-        if name not in self.logs:
-            logger = logging.getLogger(name)
-            logger.setLevel(logging.INFO)
+            # Configura solo el logger principal inicialmente
+            self.setup_logger('SimulationLogger', os.path.join(self._output_dir, "simulation.log"))
 
+    def setup_logger(self, name, filepath):
+        """Configura un logger individual."""
+        logger = logging.getLogger(name)
+        logger.setLevel(logging.INFO)
+
+        # Evitar duplicar handlers
+        if not logger.handlers:
             formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-            log_file_path = os.path.join(self.output_dir, f"{name}.log")
-            fh = logging.FileHandler(log_file_path, mode='w')
-            fh.setFormatter(formatter)
-            logger.addHandler(fh)
 
-            ch = logging.StreamHandler()
-            ch.setFormatter(formatter)
-            logger.addHandler(ch)
+            file_handler = logging.FileHandler(filepath, mode='w')
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
 
-            self.logs[name] = logger
-        return self.logs[name]
+            if name == 'SimulationLogger':
+                console_handler = logging.StreamHandler()
+                console_handler.setFormatter(formatter)
+                logger.addHandler(console_handler)
+
+        self._loggers[name] = logger
+
+    @classmethod
+    def get_logger(cls, name='SimulationLogger'):
+        """Obtiene o crea el logger que se necesite."""
+        instance = cls()
+        if name not in instance._loggers:
+            # Si no existe todavía ese logger, lo crea
+            log_filename = f"{name.lower()}.log"
+            filepath = os.path.join(instance._output_dir, log_filename)
+            instance.setup_logger(name, filepath)
+        return instance._loggers[name]
+
+    @classmethod
+    def get_output_dir(cls):
+        """Obtiene el directorio de salida."""
+        instance = cls()
+        return instance._output_dir
 
 # Singleton del logger
-logger_main = LoggerConfig().get_logger('main')
+logger_main = LoggerConfig.get_logger()
 
 # -----------------------------------------------------------------------------------
 # Definición de constantes para la simulación
@@ -111,38 +137,69 @@ class FieldAccessor:
         self.default = default
         self.cached_fields = {}
         self.dim = None
+        self.logger = LoggerConfig.get_logger('growth')
+        self.output_dir = LoggerConfig.get_output_dir()
+
         try:
-            simulator = CompuCellSetup.get_simulator()
-            if simulator:
-                potts = simulator.getPotts()
-                if potts:
-                    self.dim = potts.getCellFieldG().getDim()
-        except:
-            pass
+            # Obtener el simulador a través del campo
+            if hasattr(field_obj, 'simulator'):
+                simulator = field_obj.simulator
+                if simulator is not None and hasattr(simulator, 'getPotts'):
+                    potts = simulator.getPotts()
+                    if potts is not None and hasattr(potts, 'getCellFieldG'):
+                        cell_field = potts.getCellFieldG()
+                        if cell_field is not None:
+                            self.dim = cell_field.getDim()
+                            self.logger.info("✅ Dimensiones del simulador obtenidas correctamente")
+        except Exception as e:
+            self.logger.warning(f"⚠️ FieldAccessor: no se pudo obtener dimensiones del simulador: {e}")
 
     def get(self, cell, field_name):
+        """Accede a los campos químicos de manera segura."""
         if cell is None:
             return self.default
 
-        field_name = field_name.lower()
-        if field_name not in self.cached_fields:
-            field = getattr(self.fields, field_name, None)
-            self.cached_fields[field_name] = field
-
-        field = self.cached_fields.get(field_name)
-        if field is None:
-            return self.default
-
         try:
+            field_name = field_name.lower()
+
+            if field_name not in self.cached_fields:
+                if hasattr(self.fields, field_name):
+                    field = getattr(self.fields, field_name)
+                    if field is not None:
+                        self.cached_fields[field_name] = field
+                    else:
+                        self.logger.warning(f"⚠️ Campo '{field_name}' es None")
+                        return self.default
+                else:
+                    self.logger.warning(f"⚠️ Campo '{field_name}' no disponible")
+                    return self.default
+
+            field = self.cached_fields.get(field_name)
+            if field is None:
+                return self.default
+
+            # Verificar que las coordenadas existen
+            if not all(hasattr(cell, attr) for attr in ['xCOM', 'yCOM', 'zCOM']):
+                return self.default
+
             x, y, z = int(cell.xCOM), int(cell.yCOM), int(cell.zCOM)
+
+            if self.dim:
+                if not (0 <= x < self.dim.x and 0 <= y < self.dim.y and 0 <= z < self.dim.z):
+                    self.logger.warning(f"⚠️ Coordenadas fuera de rango para célula {getattr(cell, 'id', 'None')}: ({x}, {y}, {z})")
+                    return self.default
+
             return field[x, y, z]
-        except:
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error accediendo a campo '{field_name}' en célula {getattr(cell, 'id', 'None')}: {e}")
             return self.default
 
 class EnvironmentEvaluator:
     def __init__(self, field_accessor):
         self.fields = field_accessor
-        self.logger = LoggerConfig().get_logger('environment_evaluator')
+        self.logger = LoggerConfig.get_logger('env_eval')
+        self.output_dir = LoggerConfig.get_output_dir()
         
         # Valores metabólicos ideales (condiciones fisiológicas)
         self.O2_OPTIMAL = 180  # µM
@@ -195,64 +252,11 @@ class EnvironmentEvaluator:
             return False
 
 
-class FieldAccessor:
-    def __init__(self, field_obj, default=0.0):
-        self.fields = field_obj
-        self.default = default
-        self.cached_fields = {}
-        self.dim = None
-        self.logger = LoggerConfig().get_logger('field_accessor')
-
-        try:
-            simulator = CompuCellSetup.get_simulator()
-            if simulator:
-                potts = simulator.getPotts()
-                if potts:
-                    self.dim = potts.getCellFieldG().getDim()
-        except Exception as e:
-            self.logger.warning(f"⚠️ No se pudo obtener dimensiones del simulador: {e}")
-
-    def get(self, cell, field_name):
-        if cell is None:
-            return self.default
-
-        try:
-            field_name = field_name.lower()
-
-            # Cachear el campo químico
-            if field_name not in self.cached_fields:
-                field = getattr(self.fields, field_name, None)
-                if field is None:
-                    self.logger.warning(f"⚠️ Campo '{field_name}' no disponible.")
-                self.cached_fields[field_name] = field
-
-            field = self.cached_fields.get(field_name)
-            if field is None:
-                return self.default
-
-            # Verificar que el cell tenga los atributos
-            if not hasattr(cell, 'xCOM') or not hasattr(cell, 'yCOM') or not hasattr(cell, 'zCOM'):
-                self.logger.warning(f"⚠️ Célula sin coordenadas válidas (id={getattr(cell, 'id', 'None')})")
-                return self.default
-
-            x, y, z = int(cell.xCOM), int(cell.yCOM), int(cell.zCOM)
-
-            # Verificar que las coordenadas estén dentro de la dimensión
-            if self.dim is not None:
-                if not (0 <= x < self.dim.x and 0 <= y < self.dim.y and 0 <= z < self.dim.z):
-                    self.logger.warning(f"⚠️ Coordenadas fuera de rango para célula {getattr(cell, 'id', 'None')}: ({x}, {y}, {z})")
-                    return self.default
-
-            return field[x, y, z]
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error accediendo a campo '{field_name}' en célula {getattr(cell, 'id', 'None')}: {e}")
-            return self.default
 
 class ConstraintInitializerSteppable(SteppableBasePy):
     def __init__(self, frequency=1):
         super().__init__(frequency)
-        self.logger = LoggerConfig().get_logger('constraint_initializer')
+        self.logger = LoggerConfig.get_logger('constraint_initializer')
         self.initialized = False
 
     def start(self):
@@ -286,7 +290,7 @@ class ConstraintInitializerSteppable(SteppableBasePy):
 class GrowthSteppable(SteppableBasePy):
     def __init__(self, frequency=1):
         super().__init__(frequency)
-        self.logger = LoggerConfig().get_logger('growth')
+        self.logger = LoggerConfig.get_logger('growth')
         self.field_accessor = None
         self.env = None
         self.growth_log = []  # Para guardar todos los registros
@@ -402,10 +406,10 @@ class GrowthSteppable(SteppableBasePy):
     def finish(self):
         """Guarda resultados de crecimiento al finalizar la simulación."""
         try:
-            logger = LoggerConfig().get_logger('growth')
+            logger = LoggerConfig.get_logger('growth')
 
             # Guardar volumen final
-            volumen_path = os.path.join(LoggerConfig().output_dir, "volumen_final_celulas.csv")
+            volumen_path = os.path.join(LoggerConfig.get_output_dir(), "volumen_final_celulas.csv")
             logger.info(f"💾 Guardando {volumen_path}")
 
             with open(volumen_path, "w", newline="") as csvfile:
@@ -428,7 +432,7 @@ class GrowthSteppable(SteppableBasePy):
                     ])
 
             # Guardar log de crecimiento
-            growth_log_path = os.path.join(LoggerConfig().output_dir, "growth_log.csv")
+            growth_log_path = os.path.join(LoggerConfig.get_output_dir(), "growth_log.csv")
             logger.info(f"💾 Guardando {growth_log_path}")
 
             with open(growth_log_path, "w", newline="") as logfile:
@@ -447,7 +451,7 @@ class GrowthSteppable(SteppableBasePy):
 class MitosisSteppable(MitosisSteppableBase):
     def __init__(self, frequency=1):
         super().__init__(frequency)
-        self.logger = LoggerConfig.get_logger()
+        self.logger = LoggerConfig.get_logger('mitosis')
         self.initialized = False
 
     def start(self):
@@ -485,9 +489,10 @@ class MitosisSteppable(MitosisSteppableBase):
             self.logger.error(f"❌ Error en MitosisSteppable.step: {e}")
 
     def update_attributes(self):
-        parent_cell = self.parent_cell
-        parent_cell.targetVolume /= 2.0  # Dividir volumen de la madre en 2
-        self.clone_parent_2_child()
+        try:
+            parent_cell = self.parent_cell
+            parent_cell.targetVolume /= 2.0  # Dividir volumen de la madre en 2
+            self.clone_parent_2_child()
         except Exception as e:
             self.logger.error(f"❌ Error en update_attributes de MitosisSteppable: {e}")
 
@@ -505,7 +510,7 @@ class DeathSteppable(SteppableBasePy):
         self.field_accessor = None
         self.env = None
         self.death_count = 0
-        self.logger = LoggerConfig.get_logger()
+        self.logger = LoggerConfig.get_logger('death')
         self.initialized = False
 
     def start(self):
@@ -589,7 +594,7 @@ class DeathSteppable(SteppableBasePy):
         try:
             logger.info(f"📁 Guardando estadísticas de muerte celular...")
 
-            death_stats_path = os.path.join(logger_config.output_dir, "death_stats.csv")
+            death_stats_path = os.path.join(LoggerConfig.get_output_dir(), "death_stats.csv")
             with open(death_stats_path, "w", newline="") as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow(["Total Deaths", "MCS"])
@@ -603,7 +608,7 @@ class DeathSteppable(SteppableBasePy):
 
         finally:
             try:
-                logger.info("🔄 Finalizando DeathSteppable correctamente")
+                self.logger.info("🔄 Finalizando DeathSteppable correctamente")
             except Exception as e:
                 print(f"⚠️ Error finalizando DeathSteppable: {str(e)}")
 
@@ -624,7 +629,7 @@ class MutationSteppable(SteppableBasePy):
             "INVA→RESE": 0
         }
         self.field_accessor = None
-        self.logger = LoggerConfig.get_logger()
+        self.logger = LoggerConfig.get_logger('mutation')
         self.initialized = False
 
         if not tracemalloc.is_tracing():
@@ -826,20 +831,20 @@ class MutationSteppable(SteppableBasePy):
     def finish(self):
         """Guarda los resultados de mutación."""
         try:
-            output_file = os.path.join(logger_config.output_dir, "transition_counts.csv")
-            with open(output_file, "w", newline="") as csvfile:
+            transition_file = os.path.join(LoggerConfig.get_output_dir(), "transition_counts.csv")
+            with open(transition_file, "w", newline="") as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow(["Transition", "Count"])
                 for transition, count in self.transition_counts.items():
                     writer.writerow([transition, count])
 
-            mutation_file = os.path.join(logger_config.output_dir, "mutation_stats.csv")
+            mutation_file = os.path.join(LoggerConfig.get_output_dir(), "mutation_stats.csv")
             with open(mutation_file, "w", newline="") as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow(["Total Mutations", "MCS"])
                 writer.writerow([self.mutation_count, self.simulator.getStep()])
 
-            logger.info(f"📁 Resultados de MutationSteppable guardados correctamente")
+            self.logger.info(f"📁 Resultados de MutationSteppable guardados correctamente")
         except Exception as e:
             logger.error(f"⚠️ Error guardando resultados de MutationSteppable: {e}")
               
